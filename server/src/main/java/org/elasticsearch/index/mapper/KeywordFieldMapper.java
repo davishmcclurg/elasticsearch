@@ -89,6 +89,8 @@ public final class KeywordFieldMapper extends FieldMapper {
             = Parameter.boolParam("eager_global_ordinals", true, m -> toType(m).eagerGlobalOrdinals, false);
         private final Parameter<Integer> ignoreAbove
             = Parameter.intParam("ignore_above", true, m -> toType(m).ignoreAbove, Integer.MAX_VALUE);
+        private final Parameter<Boolean> ignoreMalformed
+            = Parameter.boolParam("ignore_malformed", true, m -> toType(m).ignoreMalformed, false);
 
         private final Parameter<String> indexOptions
             = Parameter.restrictedStringParam("index_options", false, m -> toType(m).indexOptions, "docs", "freqs");
@@ -137,7 +139,7 @@ public final class KeywordFieldMapper extends FieldMapper {
 
         @Override
         protected List<Parameter<?>> getParameters() {
-            return Arrays.asList(indexed, hasDocValues, stored, nullValue, eagerGlobalOrdinals, ignoreAbove,
+            return Arrays.asList(indexed, hasDocValues, stored, nullValue, eagerGlobalOrdinals, ignoreAbove, ignoreMalformed,
                 indexOptions, hasNorms, similarity, normalizer, splitQueriesOnWhitespace, boost, meta);
         }
 
@@ -316,6 +318,7 @@ public final class KeywordFieldMapper extends FieldMapper {
     private final String nullValue;
     private final boolean eagerGlobalOrdinals;
     private final int ignoreAbove;
+    private final boolean ignoreMalformed;
     private final String indexOptions;
     private final FieldType fieldType;
     private final SimilarityProvider similarity;
@@ -333,6 +336,7 @@ public final class KeywordFieldMapper extends FieldMapper {
         this.nullValue = builder.nullValue.getValue();
         this.eagerGlobalOrdinals = builder.eagerGlobalOrdinals.getValue();
         this.ignoreAbove = builder.ignoreAbove.getValue();
+        this.ignoreMalformed = builder.ignoreMalformed.getValue();
         this.indexOptions = builder.indexOptions.getValue();
         this.fieldType = fieldType;
         this.similarity = builder.similarity.getValue();
@@ -350,14 +354,23 @@ public final class KeywordFieldMapper extends FieldMapper {
     @Override
     protected void parseCreateField(ParseContext context) throws IOException {
         String value;
-        if (context.externalValueSet()) {
-            value = context.externalValue().toString();
-        } else {
-            XContentParser parser = context.parser();
-            if (parser.currentToken() == XContentParser.Token.VALUE_NULL) {
-                value = nullValue;
+        try {
+            if (context.externalValueSet()) {
+                value = context.externalValue().toString();
             } else {
-                value =  parser.textOrNull();
+                XContentParser parser = context.parser();
+                if (parser.currentToken() == XContentParser.Token.VALUE_NULL) {
+                    value = nullValue;
+                } else {
+                    value =  parser.textOrNull();
+                }
+            }
+        } catch (IllegalStateException e) {
+            if (ignoreMalformed) {
+                context.addIgnoredField(fieldType().name());
+                return;
+            } else {
+                throw e;
             }
         }
 

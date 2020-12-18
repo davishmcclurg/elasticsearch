@@ -18,6 +18,7 @@ import org.apache.lucene.search.SortField;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.lucene.search.AutomatonQueries;
+import org.elasticsearch.common.ParsingException;
 import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.xcontent.XContentParser;
@@ -116,6 +117,8 @@ public final class FlattenedFieldMapper extends DynamicKeyFieldMapper {
             = Parameter.boolParam("eager_global_ordinals", true, m -> builder(m).eagerGlobalOrdinals.get(), false);
         private final Parameter<Integer> ignoreAbove
             = Parameter.intParam("ignore_above", true, m -> builder(m).ignoreAbove.get(), Integer.MAX_VALUE);
+        private final Parameter<Boolean> ignoreMalformed
+            = Parameter.boolParam("ignore_malformed", true, m -> builder(m).ignoreMalformed.get(), false);
 
         private final Parameter<String> indexOptions
             = Parameter.restrictedStringParam("index_options", false, m -> builder(m).indexOptions.get(), "docs", "freqs");
@@ -132,7 +135,7 @@ public final class FlattenedFieldMapper extends DynamicKeyFieldMapper {
 
         @Override
         protected List<Parameter<?>> getParameters() {
-            return Arrays.asList(indexed, hasDocValues, depthLimit, nullValue, eagerGlobalOrdinals, ignoreAbove,
+            return Arrays.asList(indexed, hasDocValues, depthLimit, nullValue, eagerGlobalOrdinals, ignoreAbove, ignoreMalformed,
                 indexOptions, similarity, splitQueriesOnWhitespace, meta);
         }
 
@@ -464,7 +467,17 @@ public final class FlattenedFieldMapper extends DynamicKeyFieldMapper {
         }
 
         XContentParser xContentParser = context.parser();
-        context.doc().addAll(fieldParser.parse(xContentParser));
+
+        try {
+            context.doc().addAll(fieldParser.parse(xContentParser));
+        } catch (ParsingException e) {
+            if (builder.ignoreMalformed.get()) {
+                context.addIgnoredField(mappedFieldType.name());
+                return;
+            } else {
+                throw e;
+            }
+        }
 
         if (mappedFieldType.hasDocValues() == false) {
             createFieldNamesField(context);

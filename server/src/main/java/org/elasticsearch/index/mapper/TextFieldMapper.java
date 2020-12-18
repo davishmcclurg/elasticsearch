@@ -262,6 +262,8 @@ public class TextFieldMapper extends FieldMapper {
             = Parameter.boolParam("index_phrases", false, m -> builder(m).indexPhrases.getValue(), false);
         final Parameter<PrefixConfig> indexPrefixes = new Parameter<>("index_prefixes", false,
             () -> null, TextFieldMapper::parsePrefixConfig, m -> builder(m).indexPrefixes.getValue()).acceptsNull();
+        final Parameter<Boolean> ignoreMalformed
+            = Parameter.boolParam("ignore_malformed", true, m -> builder(m).ignoreMalformed.getValue(), false);
 
         private final Parameter<Float> boost = Parameter.boostParam();
         private final Parameter<Map<String, String>> meta = Parameter.metaParam();
@@ -310,6 +312,7 @@ public class TextFieldMapper extends FieldMapper {
                 analyzers.positionIncrementGap,
                 fieldData, freqFilter, eagerGlobalOrdinals,
                 indexPhrases, indexPrefixes,
+                ignoreMalformed,
                 boost, meta);
         }
 
@@ -820,10 +823,19 @@ public class TextFieldMapper extends FieldMapper {
     @Override
     protected void parseCreateField(ParseContext context) throws IOException {
         final String value;
-        if (context.externalValueSet()) {
-            value = context.externalValue().toString();
-        } else {
-            value = context.parser().textOrNull();
+        try {
+            if (context.externalValueSet()) {
+                value = context.externalValue().toString();
+            } else {
+                value = context.parser().textOrNull();
+            }
+        } catch (IllegalStateException e) {
+            if (builder.ignoreMalformed.getValue()) {
+                context.addIgnoredField(fieldType().name());
+                return;
+            } else {
+                throw e;
+            }
         }
 
         if (value == null) {
@@ -995,5 +1007,6 @@ public class TextFieldMapper extends FieldMapper {
         this.builder.freqFilter.toXContent(builder, includeDefaults);
         this.builder.indexPrefixes.toXContent(builder, includeDefaults);
         this.builder.indexPhrases.toXContent(builder, includeDefaults);
+        this.builder.ignoreMalformed.toXContent(builder, includeDefaults);
     }
 }
