@@ -628,15 +628,24 @@ public final class DateFieldMapper extends FieldMapper {
     @Override
     protected void parseCreateField(ParseContext context) throws IOException {
         String dateAsString;
-        if (context.externalValueSet()) {
-            Object dateAsObject = context.externalValue();
-            if (dateAsObject == null) {
-                dateAsString = null;
+        try {
+            if (context.externalValueSet()) {
+                Object dateAsObject = context.externalValue();
+                if (dateAsObject == null) {
+                    dateAsString = null;
+                } else {
+                    dateAsString = dateAsObject.toString();
+                }
             } else {
-                dateAsString = dateAsObject.toString();
+                dateAsString = context.parser().textOrNull();
             }
-        } else {
-            dateAsString = context.parser().textOrNull();
+        } catch (IllegalStateException e) {
+            if (ignoreMalformed) {
+                context.addIgnoredField(mappedFieldType.name());
+                return;
+            } else {
+                throw e;
+            }
         }
 
         long timestamp;
